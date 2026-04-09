@@ -196,7 +196,7 @@ namespace ModelViewer3
         // Растеризация с интерполяцией нормалей (Затенение Гуро/Фонга)
         private unsafe void FillTrianglePhong(VertexData p0, VertexData p1, VertexData p2, int* ptr, int w, int h, Vector3 cameraPos)
         {
-            // 1. Сортировка вершин (остается прежней)
+            // 1. Сортировка вершин 
             if (p0.ScreenPos.Y > p1.ScreenPos.Y) Swap(ref p0, ref p1);
             if (p0.ScreenPos.Y > p2.ScreenPos.Y) Swap(ref p0, ref p2);
             if (p1.ScreenPos.Y > p2.ScreenPos.Y) Swap(ref p1, ref p2);
@@ -205,7 +205,7 @@ namespace ModelViewer3
             float total_height = p2.ScreenPos.Y - p0.ScreenPos.Y;
             if (total_height < 1e-5) return; // Слишком плоский треугольник
 
-            // Начальная и конечная строки (ограничиваем экраном)
+            // Начальная и конечная строки
             int y_start = Math.Max(0, (int)Math.Ceiling(p0.ScreenPos.Y));
             int y_end   = Math.Min(h - 1, (int)Math.Ceiling(p2.ScreenPos.Y));
 
@@ -226,7 +226,7 @@ namespace ModelViewer3
 
                 if (A.ScreenPos.X > B.ScreenPos.X) Swap(ref A, ref B);
 
-                // Уточняем границы по X (используем Ceiling, чтобы избежать щелей между треугольниками)
+                // Уточняем границы по X
                 int x_left = Math.Max(0, (int)Math.Ceiling(A.ScreenPos.X));
                 int x_right = Math.Min(w - 1, (int)Math.Ceiling(B.ScreenPos.X));
 
@@ -244,7 +244,7 @@ namespace ModelViewer3
 
                         // Для освещения Фонга интерполируем мировые координаты и нормаль
                         Vector3 worldP = Vector3.Lerp(A.WorldPos, B.WorldPos, phi);
-                        // ВАЖНО: Нормализуем интерполированную нормаль для каждого пикселя!
+                        // Нормализуем интерполированную нормаль для каждого пикселя
                         Vector3 normalP = Vector3.Lerp(A.Normal, B.Normal, phi).Normalize();
 
                         ptr[idx] = CalculatePhongLight(worldP, normalP, cameraPos);
