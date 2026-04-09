@@ -196,42 +196,58 @@ namespace ModelViewer3
         // Растеризация с интерполяцией нормалей (Затенение Гуро/Фонга)
         private unsafe void FillTrianglePhong(VertexData p0, VertexData p1, VertexData p2, int* ptr, int w, int h, Vector3 cameraPos)
         {
+            // 1. Сортировка вершин (остается прежней)
             if (p0.ScreenPos.Y > p1.ScreenPos.Y) Swap(ref p0, ref p1);
             if (p0.ScreenPos.Y > p2.ScreenPos.Y) Swap(ref p0, ref p2);
             if (p1.ScreenPos.Y > p2.ScreenPos.Y) Swap(ref p1, ref p2);
 
-            int total_height = (int)(p2.ScreenPos.Y - p0.ScreenPos.Y);
-            if (total_height == 0) return;
+            // Используем float для высоты, чтобы не терять точность при расчете шага
+            float total_height = p2.ScreenPos.Y - p0.ScreenPos.Y;
+            if (total_height < 1e-5) return; // Слишком плоский треугольник
 
-            for (int i = 0; i < total_height; i++) {
-                bool second_half = i > p1.ScreenPos.Y - p0.ScreenPos.Y || p1.ScreenPos.Y == p0.ScreenPos.Y;
-                int segment_height = second_half ? (int)(p2.ScreenPos.Y - p1.ScreenPos.Y) : (int)(p1.ScreenPos.Y - p0.ScreenPos.Y);
-                if (segment_height == 0) continue;
+            // Начальная и конечная строки (ограничиваем экраном)
+            int y_start = Math.Max(0, (int)Math.Ceiling(p0.ScreenPos.Y));
+            int y_end   = Math.Min(h - 1, (int)Math.Ceiling(p2.ScreenPos.Y));
 
-                float alpha = (float)i / total_height;
-                float beta  = (float)(i - (second_half ? p1.ScreenPos.Y - p0.ScreenPos.Y : 0)) / segment_height;
+            for (int y = y_start; y < y_end; y++) {
+                // Проверяем, в какой половине треугольника мы находимся
+                bool second_half = y > p1.ScreenPos.Y || Math.Abs(p1.ScreenPos.Y - p0.ScreenPos.Y) < 1e-5;
+                float segment_height = second_half ? (p2.ScreenPos.Y - p1.ScreenPos.Y) : (p1.ScreenPos.Y - p0.ScreenPos.Y);
+                
+                if (segment_height < 1e-5) continue;
 
+                // Вычисляем коэффициенты интерполяции на основе текущего Y
+                float alpha = (y - p0.ScreenPos.Y) / total_height;
+                float beta  = (y - (second_half ? p1.ScreenPos.Y : p0.ScreenPos.Y)) / segment_height;
+
+                // Точки на левом и правом ребрах
                 VertexData A = VertexData.Lerp(p0, p2, alpha);
                 VertexData B = second_half ? VertexData.Lerp(p1, p2, beta) : VertexData.Lerp(p0, p1, beta);
 
                 if (A.ScreenPos.X > B.ScreenPos.X) Swap(ref A, ref B);
 
-                int y = (int)p0.ScreenPos.Y + i;
-                if (y < 0 || y >= h) continue;
+                // Уточняем границы по X (используем Ceiling, чтобы избежать щелей между треугольниками)
+                int x_left = Math.Max(0, (int)Math.Ceiling(A.ScreenPos.X));
+                int x_right = Math.Min(w - 1, (int)Math.Ceiling(B.ScreenPos.X));
 
-                int x_start = Math.Max(0, (int)A.ScreenPos.X);
-                int x_end = Math.Min(w - 1, (int)B.ScreenPos.X);
-
-                for (int x = x_start; x <= x_end; x++) {
-                    float phi = B.ScreenPos.X == A.ScreenPos.X ? 1.0f : (float)(x - A.ScreenPos.X) / (float)(B.ScreenPos.X - A.ScreenPos.X);
+                for (int x = x_left; x < x_right; x++) {
+                    float phi = (B.ScreenPos.X - A.ScreenPos.X) < 1e-5 ? 1.0f : (x - A.ScreenPos.X) / (B.ScreenPos.X - A.ScreenPos.X);
                     
-                    // Попиксельная интерполяция данных
-                    VertexData P = VertexData.Lerp(A, B, phi);
+                    // Интерполируем Z, позицию и нормаль
+                    float z = A.ScreenPos.Z + (B.ScreenPos.Z - A.ScreenPos.Z) * phi;
+                    
                     int idx = y * w + x;
                     
-                    if (P.ScreenPos.Z < zBuffer[idx]) {
-                        zBuffer[idx] = P.ScreenPos.Z;
-                        ptr[idx] = CalculatePhongLight(P.WorldPos, P.Normal.Normalize(), cameraPos);
+                    // Проверка Z-буфера (с небольшим эпсилоном против Z-fighting)
+                    if (z < zBuffer[idx] - 0.0001f) {
+                        zBuffer[idx] = z;
+
+                        // Для освещения Фонга интерполируем мировые координаты и нормаль
+                        Vector3 worldP = Vector3.Lerp(A.WorldPos, B.WorldPos, phi);
+                        // ВАЖНО: Нормализуем интерполированную нормаль для каждого пикселя!
+                        Vector3 normalP = Vector3.Lerp(A.Normal, B.Normal, phi).Normalize();
+
+                        ptr[idx] = CalculatePhongLight(worldP, normalP, cameraPos);
                     }
                 }
             }
